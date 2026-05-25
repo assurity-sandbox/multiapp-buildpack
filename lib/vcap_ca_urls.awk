@@ -9,6 +9,21 @@ function add_token(type, value) {
   token_value[token_count] = value
 }
 
+function is_hex_escape(value,    offset, digit) {
+  if (length(value) != 4) {
+    return 0
+  }
+
+  for (offset = 1; offset <= 4; offset++) {
+    digit = substr(value, offset, 1)
+    if (digit !~ /^[0-9a-fA-F]$/) {
+      return 0
+    }
+  }
+
+  return 1
+}
+
 function scan_string(    value, escape, hex) {
   value = ""
   cursor++
@@ -43,7 +58,7 @@ function scan_string(    value, escape, hex) {
         value = value "\t"
       } else if (escape == "u") {
         hex = substr(input, cursor + 1, 4)
-        if (hex !~ /^[0-9a-fA-F]{4}$/) {
+        if (!is_hex_escape(hex)) {
           fail("invalid unicode escape")
         }
         value = value "\\u" hex

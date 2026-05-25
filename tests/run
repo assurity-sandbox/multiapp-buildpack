@@ -138,6 +138,23 @@ test_rejects_malformed_json() {
   assert_contains "reports malformed JSON" "${output}" "Invalid VCAP_SERVICES JSON"
 }
 
+test_accepts_unicode_escape_sequences() {
+  local vcap actual
+  vcap='{
+    "csb-aws-aurora-postgresql": [
+      {
+        "label": "csb-aws-aurora-postgresql",
+        "credentials": {
+          "certificate_authority_url": "https://example.com/ca.pem",
+          "password": "contains\u003cunicode\u003e"
+        }
+      }
+    ]
+  }'
+  actual="$(VCAP_SERVICES="${vcap}" run_parser)"
+  assert_equals "accepts unicode escape sequences" "https://example.com/ca.pem" "${actual}"
+}
+
 test_supply_downloads_and_writes_profile_scripts() {
   local workspace build cache deps cert_url
   workspace="$(mktemp -d)"
@@ -293,6 +310,7 @@ test_extracts_aurora_ca_url
 test_ignores_non_aurora_services
 test_deduplicates_ca_urls
 test_rejects_malformed_json
+test_accepts_unicode_escape_sequences
 test_supply_downloads_and_writes_profile_scripts
 test_supply_skips_without_ca_urls
 test_supply_fails_for_invalid_pem
