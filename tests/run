@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FAILURES=0
+
+fail() {
+  echo "not ok - $1"
+  FAILURES=$((FAILURES + 1))
+}
+
+pass() {
+  echo "ok - $1"
+}
+
+assert_equals() {
+  local name="$1"
+  local expected="$2"
+  local actual="$3"
+
+  if [[ "${actual}" == "${expected}" ]]; then
+    pass "${name}"
+  else
+    fail "${name}: expected '${expected}', got '${actual}'"
+  fi
+}
+
+assert_contains() {
+  local name="$1"
+  local haystack="$2"
+  local needle="$3"
+
+  if [[ "${haystack}" == *"${needle}"* ]]; then
+    pass "${name}"
+  else
+    fail "${name}: expected output to contain '${needle}', got '${haystack}'"
+  fi
+}
+
+assert_file_exists() {
+  local name="$1"
+  local path="$2"
+
+  if [[ -f "${path}" ]]; then
+    pass "${name}"
+  else
+    fail "${name}: expected file '${path}' to exist"
+  fi
+}
+
+assert_file_contains() {
+  local name="$1"
+  local path="$2"
+  local needle="$3"
+
+  if [[ -f "${path}" && "$(<"${path}")" == *"${needle}"* ]]; then
+    pass "${name}"
+  else
+    fail "${name}: expected file '${path}' to contain '${needle}'"
+  fi
+}
+
+assert_file_not_contains() {
+  local name="$1"
+  local path="$2"
+  local needle="$3"
+
+  if [[ -f "${path}" && "$(<"${path}")" != *"${needle}"* ]]; then
+    pass "${name}"
+  else
+    fail "${name}: expected file '${path}' not to contain '${needle}'"
+  fi
+}
+
+run_parser() {
+  ruby "${ROOT_DIR}/lib/vcap_ca_urls.rb"
+}
+
+test_extracts_aurora_ca_url() {
+  local actual
+  actual="$(VCAP_SERVICES="$(<"${ROOT_DIR}/test/fixtures/aurora-vcap.json")" run_parser)"
+  assert_equals \
+    "extracts Aurora certificate authority URL" \
+    "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem" \
+    "${actual}"
+}
+
+test_ignores_non_aurora_services() {
+  local vcap actual
+  vcap='{
+    "user-provided": [
+      {
+        "label": "user-provided",
+        "credentials": {
+          "certificate_authority_url": "https://example.com/ca.pem"
+        }
+      }
+    ]
+  }'
+  actual="$(VCAP_SERVICES="${vcap}" run_parser)"
+  assert_equals "ignores non-Aurora services" "" "${actual}"
+}
+
+test_deduplicates_ca_urls() {
+  local vcap actual
+  vcap='{
+    "csb-aws-aurora-postgresql": [
+      {
+        "label": "csb-aws-aurora-postgresql",
+        "credentials": {
+          "certificate_authority_url": "https://example.com/ca.pem"
+        }
+      },
+      {
+        "label": "csb-aws-aurora-postgresql",
+        "credentials": {
+          "certificate_authority_url": "https://example.com/ca.pem"
+        }
+      }
+    ]
+  }'
+  actual="$(VCAP_SERVICES="${vcap}" run_parser)"
+  assert_equals "deduplicates CA URLs" "https://example.com/ca.pem" "${actual}"
+}
+
+test_rejects_malformed_json() {
+  local output status
+  set +e
+  output="$(VCAP_SERVICES='{"broken":' run_parser 2>&1)"
+  status=$?
+  set -e
+
+  if [[ ${status} -ne 0 ]]; then
+    pass "rejects malformed VCAP_SERVICES"
+  else
+    fail "rejects malformed VCAP_SERVICES: expected non-zero exit"
+  fi
+  assert_contains "reports malformed JSON" "${output}" "Invalid VCAP_SERVICES JSON"
+}
+
+test_supply_downloads_and_writes_profile_scripts() {
+  local workspace build cache deps cert_url
+  workspace="$(mktemp -d)"
+  build="${workspace}/build"
+  cache="${workspace}/cache"
+  deps="${workspace}/deps"
+  mkdir -p "${build}" "${cache}" "${deps}"
+
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -subj "/CN=aurora-ca-test" \
+    -keyout "${workspace}/ca.key" \
+    -out "${workspace}/ca.pem" \
+    -days 1 >/dev/null 2>&1
+
+  cert_url="file://${workspace}/ca.pem"
+  VCAP_SERVICES="{
+    \"csb-aws-aurora-postgresql\": [
+      {
+        \"label\": \"csb-aws-aurora-postgresql\",
+        \"credentials\": {
+          \"certificate_authority_url\": \"${cert_url}\"
+        }
+      }
+    ]
+  }" \
+    "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0" >/dev/null
+
+  assert_file_exists "writes combined CA bundle" "${deps}/0/aurora-ca-certificates/aurora-ca-bundle.pem"
+  assert_file_exists "writes buildpack config" "${deps}/0/config.yml"
+  assert_file_exists "writes launch profile script" "${deps}/0/profile.d/aurora-ca-certificates.sh"
+  assert_file_contains \
+    "launch profile uses Cloud Foundry deps path" \
+    "${deps}/0/profile.d/aurora-ca-certificates.sh" \
+    "/home/vcap/deps/0/aurora-ca-certificates"
+  assert_file_not_contains \
+    "launch profile does not depend on DEPS_IDX" \
+    "${deps}/0/profile.d/aurora-ca-certificates.sh" \
+    "DEPS_IDX"
+}
+
+test_supply_skips_without_ca_urls() {
+  local workspace build cache deps output
+  workspace="$(mktemp -d)"
+  build="${workspace}/build"
+  cache="${workspace}/cache"
+  deps="${workspace}/deps"
+  mkdir -p "${build}" "${cache}" "${deps}"
+
+  output="$(VCAP_SERVICES='{}' "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0")"
+  assert_contains "skips when no Aurora CA URL exists" "${output}" "No Aurora PostgreSQL CA URL found"
+}
+
+test_supply_fails_for_invalid_pem() {
+  local workspace build cache deps cert_url output status
+  workspace="$(mktemp -d)"
+  build="${workspace}/build"
+  cache="${workspace}/cache"
+  deps="${workspace}/deps"
+  mkdir -p "${build}" "${cache}" "${deps}"
+  printf "not a certificate\n" >"${workspace}/ca.pem"
+
+  cert_url="file://${workspace}/ca.pem"
+  set +e
+  output="$(VCAP_SERVICES="{
+    \"csb-aws-aurora-postgresql\": [
+      {
+        \"label\": \"csb-aws-aurora-postgresql\",
+        \"credentials\": {
+          \"certificate_authority_url\": \"${cert_url}\"
+        }
+      }
+    ]
+  }" \
+    "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ ${status} -ne 0 ]]; then
+    pass "fails for invalid PEM bundle"
+  else
+    fail "fails for invalid PEM bundle: expected non-zero exit"
+  fi
+  assert_contains "reports invalid PEM bundle" "${output}" "does not contain a PEM certificate"
+}
+
+test_supply_fails_for_download_error() {
+  local workspace build cache deps output status
+  workspace="$(mktemp -d)"
+  build="${workspace}/build"
+  cache="${workspace}/cache"
+  deps="${workspace}/deps"
+  mkdir -p "${build}" "${cache}" "${deps}"
+
+  set +e
+  output="$(VCAP_SERVICES='{
+    "csb-aws-aurora-postgresql": [
+      {
+        "label": "csb-aws-aurora-postgresql",
+        "credentials": {
+          "certificate_authority_url": "file:///path/that/does/not/exist.pem"
+        }
+      }
+    ]
+  }' \
+    "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ ${status} -ne 0 ]]; then
+    pass "fails for download error"
+  else
+    fail "fails for download error: expected non-zero exit"
+  fi
+  assert_contains "reports download error" "${output}" "Failed to download CA bundle"
+}
+
+test_extracts_aurora_ca_url
+test_ignores_non_aurora_services
+test_deduplicates_ca_urls
+test_rejects_malformed_json
+test_supply_downloads_and_writes_profile_scripts
+test_supply_skips_without_ca_urls
+test_supply_fails_for_invalid_pem
+test_supply_fails_for_download_error
+
+if [[ ${FAILURES} -gt 0 ]]; then
+  echo "${FAILURES} test(s) failed"
+  exit 1
+fi
+
+echo "All tests passed"

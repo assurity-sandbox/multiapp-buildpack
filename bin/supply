@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 4 ]]; then
+  echo "Aurora CA Buildpack: ERROR: bin/supply requires build, cache, deps, and index arguments" >&2
+  exit 1
+fi
+
+BUILD_DIR="$1"
+CACHE_DIR="$2"
+DEPS_DIR="$3"
+INDEX="$4"
+BUILDPACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+source "${BUILDPACK_DIR}/lib/aurora_ca_supply.sh"
+
+aurora_ca_install "${BUILD_DIR}" "${DEPS_DIR}" "${INDEX}" "${BUILDPACK_DIR}"

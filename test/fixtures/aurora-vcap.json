@@ -1,0 +1,17 @@
+{
+  "csb-aws-aurora-postgresql": [
+    {
+      "credentials": {
+        "certificate_authority_url": "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem"
+      },
+      "label": "csb-aws-aurora-postgresql",
+      "name": "test-postgresql",
+      "tags": [
+        "aws",
+        "aurora",
+        "postgresql",
+        "postgres"
+      ]
+    }
+  ]
+}
