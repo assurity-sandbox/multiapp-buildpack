@@ -43,6 +43,42 @@ aurora_ca_validate_pem_bundle() {
   fi
 }
 
+aurora_ca_extract_urls() {
+  local vcap_services="${VCAP_SERVICES:-}"
+  local jq_output
+
+  if [[ -z "${vcap_services//[[:space:]]/}" ]]; then
+    return 0
+  fi
+
+  if ! jq_output="$(jq --raw-output '
+    def aurora_postgres_binding:
+      (.label // "") == "csb-aws-aurora-postgresql"
+      or (.name // "") == "csb-aws-aurora-postgresql"
+      or (
+        ((.tags // []) | map(tostring | ascii_downcase)) as $tags
+        | ($tags | index("aurora")) != null
+          and (($tags | index("postgres")) != null or ($tags | index("postgresql")) != null)
+      );
+
+    [
+      to_entries[]
+      | .value[]
+      | select(type == "object")
+      | select(aurora_postgres_binding)
+      | .credentials.certificate_authority_url? // empty
+      | select(type == "string" and length > 0)
+    ]
+    | unique
+    | .[]
+  ' <<<"${vcap_services}" 2>/dev/null)"; then
+    echo "Invalid VCAP_SERVICES JSON" >&2
+    return 1
+  fi
+
+  printf "%s\n" "${jq_output}"
+}
+
 aurora_ca_write_profile_script() {
   local index="$1"
   local profile_dir="$2"
@@ -100,16 +136,15 @@ aurora_ca_install() {
   local install_dir="${deps_dir}/${index}/aurora-ca-certificates"
   local deps_index_dir="${deps_dir}/${index}"
   local profile_dir="${deps_dir}/${index}/profile.d"
-  local parser="${buildpack_dir}/lib/vcap_ca_urls.awk"
   local urls
 
-  aurora_ca_require_command awk
+  aurora_ca_require_command jq
   aurora_ca_require_command curl
   aurora_ca_require_command openssl
 
   mkdir -p "${install_dir}"
 
-  if ! urls="$(awk -f "${parser}")"; then
+  if ! urls="$(aurora_ca_extract_urls)"; then
     aurora_ca_fail "Could not parse VCAP_SERVICES"
   fi
 

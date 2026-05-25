@@ -53,7 +53,7 @@ Bindings without `credentials.certificate_authority_url` are ignored.
 The staging container must provide:
 
 - `bash`
-- `awk`
+- `jq`
 - `curl`
 - `openssl`
 

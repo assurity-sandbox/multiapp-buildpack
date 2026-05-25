@@ -73,7 +73,8 @@ assert_file_not_contains() {
 }
 
 run_parser() {
-  awk -f "${ROOT_DIR}/lib/vcap_ca_urls.awk"
+  source "${ROOT_DIR}/lib/aurora_ca_supply.sh"
+  aurora_ca_extract_urls
 }
 
 test_extracts_aurora_ca_url() {
@@ -271,7 +272,7 @@ test_supply_fails_for_download_error() {
   assert_contains "reports download error" "${output}" "Failed to download CA bundle"
 }
 
-test_supply_does_not_require_ruby() {
+test_supply_uses_jq_without_ruby_or_awk() {
   local workspace build cache deps cert_url path_dir command_path
   workspace="$(mktemp -d)"
   build="${workspace}/build"
@@ -280,7 +281,7 @@ test_supply_does_not_require_ruby() {
   path_dir="${workspace}/path"
   mkdir -p "${build}" "${cache}" "${deps}" "${path_dir}"
 
-  for command_path in bash curl openssl awk grep cat cp chmod dirname pwd mkdir; do
+  for command_path in bash curl openssl jq grep cat cp chmod dirname pwd mkdir; do
     ln -s "$(command -v "${command_path}")" "${path_dir}/${command_path}"
   done
 
@@ -303,7 +304,9 @@ test_supply_does_not_require_ruby() {
   }" \
     "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0" >/dev/null
 
-  assert_file_exists "supply works without ruby" "${deps}/0/aurora-ca-certificates/aurora-ca-bundle.pem"
+  assert_file_exists \
+    "supply works with jq and without ruby or awk" \
+    "${deps}/0/aurora-ca-certificates/aurora-ca-bundle.pem"
 }
 
 test_extracts_aurora_ca_url
@@ -315,7 +318,7 @@ test_supply_downloads_and_writes_profile_scripts
 test_supply_skips_without_ca_urls
 test_supply_fails_for_invalid_pem
 test_supply_fails_for_download_error
-test_supply_does_not_require_ruby
+test_supply_uses_jq_without_ruby_or_awk
 
 if [[ ${FAILURES} -gt 0 ]]; then
   echo "${FAILURES} test(s) failed"
