@@ -196,6 +196,46 @@ test_supply_downloads_and_writes_profile_scripts() {
     "DEPS_IDX"
 }
 
+test_profile_appends_to_java_buildpack_system_bundle() {
+  local workspace build cache deps cert_url system_bundle profile_script
+  workspace="$(mktemp -d)"
+  build="${workspace}/build"
+  cache="${workspace}/cache"
+  deps="${workspace}/deps"
+  system_bundle="${workspace}/ca-certificates.crt"
+  mkdir -p "${build}" "${cache}" "${deps}"
+  printf "system-ca-placeholder\n" >"${system_bundle}"
+
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -subj "/CN=aurora-ca-test" \
+    -keyout "${workspace}/ca.key" \
+    -out "${workspace}/ca.pem" \
+    -days 1 >/dev/null 2>&1
+
+  cert_url="file://${workspace}/ca.pem"
+  VCAP_SERVICES="{
+    \"csb-aws-aurora-postgresql\": [
+      {
+        \"label\": \"csb-aws-aurora-postgresql\",
+        \"credentials\": {
+          \"certificate_authority_url\": \"${cert_url}\"
+        }
+      }
+    ]
+  }" \
+    "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0" >/dev/null
+
+  profile_script="${deps}/0/profile.d/aurora-ca-certificates.sh"
+  AURORA_CA_DIR="${deps}/0/aurora-ca-certificates" \
+    AURORA_CA_SYSTEM_BUNDLE="${system_bundle}" \
+    source "${profile_script}" >/dev/null
+
+  assert_file_contains \
+    "launch profile appends CA to Java buildpack system bundle" \
+    "${system_bundle}" \
+    "-----BEGIN CERTIFICATE-----"
+}
+
 test_supply_skips_without_ca_urls() {
   local workspace build cache deps output
   workspace="$(mktemp -d)"
@@ -315,6 +355,7 @@ test_deduplicates_ca_urls
 test_rejects_malformed_json
 test_accepts_unicode_escape_sequences
 test_supply_downloads_and_writes_profile_scripts
+test_profile_appends_to_java_buildpack_system_bundle
 test_supply_skips_without_ca_urls
 test_supply_fails_for_invalid_pem
 test_supply_fails_for_download_error

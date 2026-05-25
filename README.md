@@ -30,12 +30,15 @@ During staging, `bin/supply`:
 
 At launch, the profile script:
 
-1. Exports `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, and
-   `CURL_CA_BUNDLE` pointing at the staged CA bundle.
-2. Attempts to copy the CA bundle to
+1. Attempts to append the staged CA bundle to
+   `/etc/ssl/certs/ca-certificates.crt`, which is the system bundle loaded by
+   the Cloud Foundry Java buildpack container security provider.
+2. If direct append is not available, attempts to copy the CA bundle to
    `/usr/local/share/ca-certificates/aurora-postgresql-ca.crt` and run
    `update-ca-certificates` when the container allows it.
-3. Logs a warning and keeps the environment-variable fallback when the system
+3. Exports `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, and
+   `CURL_CA_BUNDLE` pointing at the effective CA bundle.
+4. Logs a warning and keeps the staged CA bundle fallback when the system
    truststore is not writable.
 
 ## Service Matching
@@ -60,10 +63,10 @@ The staging container must provide:
 ## Limitations
 
 Classic non-final buildpacks are constrained to write under `deps/<index>`
-during staging. This buildpack therefore cannot guarantee a real mutation of
-`/etc/ssl/certs` at staging time. It performs a launch-time system truststore
-install only when the runtime container permits it, and otherwise relies on the
-exported CA bundle variables.
+during staging. This buildpack therefore performs system truststore updates from
+its launch profile. The update works when the runtime container permits writes
+to `/etc/ssl/certs/ca-certificates.crt` or supports `update-ca-certificates`.
+When neither path is available, it relies on the exported CA bundle variables.
 
 The final app buildpack must honor supplied `profile.d` scripts from earlier
 buildpacks, which is the contract used by Cloud Foundry core buildpacks.

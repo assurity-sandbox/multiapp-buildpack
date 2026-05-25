@@ -89,28 +89,36 @@ aurora_ca_write_profile_script() {
   cat >"${script_path}" <<PROFILE
 #!/usr/bin/env bash
 
-aurora_ca_dir="/home/vcap/deps/${index}/aurora-ca-certificates"
+aurora_ca_dir="\${AURORA_CA_DIR:-/home/vcap/deps/${index}/aurora-ca-certificates}"
 aurora_ca_bundle="\${aurora_ca_dir}/aurora-ca-bundle.pem"
 aurora_ca_cert="\${aurora_ca_dir}/aurora-ca-bundle.crt"
+aurora_ca_system_bundle="\${AURORA_CA_SYSTEM_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
+aurora_ca_effective_bundle="\${aurora_ca_bundle}"
 
 if [[ ! -s "\${aurora_ca_bundle}" ]]; then
   echo "Aurora CA Buildpack: CA bundle is missing at \${aurora_ca_bundle}" >&2
   return 0
 fi
 
-export SSL_CERT_FILE="\${aurora_ca_bundle}"
-export REQUESTS_CA_BUNDLE="\${aurora_ca_bundle}"
-export CURL_CA_BUNDLE="\${aurora_ca_bundle}"
-export SSL_CERT_DIR="\${aurora_ca_dir}\${SSL_CERT_DIR:+:\${SSL_CERT_DIR}}"
-
-if command -v update-ca-certificates >/dev/null 2>&1 &&
+if [[ -f "\${aurora_ca_system_bundle}" && -w "\${aurora_ca_system_bundle}" ]]; then
+  printf "\n" >>"\${aurora_ca_system_bundle}" &&
+    cat "\${aurora_ca_bundle}" >>"\${aurora_ca_system_bundle}" &&
+    aurora_ca_effective_bundle="\${aurora_ca_system_bundle}" &&
+    echo "Aurora CA Buildpack: installed Aurora PostgreSQL CA into \${aurora_ca_system_bundle}"
+elif command -v update-ca-certificates >/dev/null 2>&1 &&
    [[ -d /usr/local/share/ca-certificates && -w /usr/local/share/ca-certificates ]]; then
   cp "\${aurora_ca_cert}" /usr/local/share/ca-certificates/aurora-postgresql-ca.crt &&
     update-ca-certificates >/dev/null 2>&1 &&
+    aurora_ca_effective_bundle="\${aurora_ca_system_bundle}" &&
     echo "Aurora CA Buildpack: installed Aurora PostgreSQL CA into system truststore"
 else
   echo "Aurora CA Buildpack: system truststore is not writable; using CA bundle environment variables"
 fi
+
+export SSL_CERT_FILE="\${aurora_ca_effective_bundle}"
+export REQUESTS_CA_BUNDLE="\${aurora_ca_effective_bundle}"
+export CURL_CA_BUNDLE="\${aurora_ca_effective_bundle}"
+export SSL_CERT_DIR="\${aurora_ca_dir}\${SSL_CERT_DIR:+:\${SSL_CERT_DIR}}"
 PROFILE
 
   chmod +x "${script_path}"

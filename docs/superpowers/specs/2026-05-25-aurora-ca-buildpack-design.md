@@ -29,12 +29,14 @@ writes `deps/<index>/config.yml`, then writes launch-time environment scripts
 under `deps/<index>/profile.d`.
 
 Because a non-final buildpack cannot safely mutate `/etc/ssl/certs` during
-staging, the launch script attempts a real system truststore installation only
-when the runtime container permits writes to `/usr/local/share/ca-certificates`
-and `update-ca-certificates` is available. If the container does not allow this,
-the script exports `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, and
-`CURL_CA_BUNDLE` pointing at the staged bundle so common TLS libraries can still
-use the downloaded CA.
+staging, the launch script attempts a real system truststore installation at
+runtime. It first appends the staged CA bundle to
+`/etc/ssl/certs/ca-certificates.crt`, the bundle loaded by the Cloud Foundry
+Java buildpack container security provider. If direct append is unavailable, it
+tries `/usr/local/share/ca-certificates` plus `update-ca-certificates`. If the
+container does not allow either system path, the script exports `SSL_CERT_FILE`,
+`SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, and `CURL_CA_BUNDLE` pointing at the
+staged bundle so common TLS libraries can still use the downloaded CA.
 
 ## Components
 
@@ -67,8 +69,8 @@ Only bindings with a non-empty
 - Missing required tools: fail staging when `jq`, `curl`, or `openssl` is
   unavailable.
 - Download failure or invalid PEM: fail staging.
-- Runtime truststore is not writable: log a warning and use environment-variable
-  trust bundle fallback.
+- Runtime truststore is not writable: log a warning and use the staged CA bundle
+  fallback through environment variables.
 
 ## Testing
 
@@ -80,4 +82,6 @@ The test harness exercises parser and supply behavior without Cloud Foundry:
 - Malformed JSON fails.
 - `bin/supply` downloads a local PEM URL, validates it, and creates profile
   scripts.
+- The profile script appends the staged CA to the Java buildpack system bundle
+  when that bundle is writable.
 - `bin/supply` succeeds when no Aurora CA URL is present.

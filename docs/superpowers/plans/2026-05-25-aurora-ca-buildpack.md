@@ -6,12 +6,12 @@
 
 **Goal:** Build a classic Cloud Foundry supply buildpack that installs Aurora PostgreSQL CA trust from `VCAP_SERVICES`.
 
-**Architecture:** A Bash `bin/supply` script coordinates staging work, a small Ruby
-parser extracts CA URLs from `VCAP_SERVICES`, and launch-time profile scripts
-expose the staged CA bundle to application processes. The buildpack stays
-non-final so it can be used before the real application buildpack.
+**Architecture:** A Bash `bin/supply` script coordinates staging work, `jq`
+extracts CA URLs from `VCAP_SERVICES`, and launch-time profile scripts expose
+the staged CA bundle to application processes. The buildpack stays non-final so
+it can be used before the real application buildpack.
 
-**Tech Stack:** Bash, Ruby standard `json`, `curl`, `openssl`, dependency-free shell tests.
+**Tech Stack:** Bash, `jq`, `curl`, `openssl`, dependency-free shell tests.
 
 ---
 
@@ -66,7 +66,8 @@ Expected: parser tests pass.
 - [ ] **Step 1: Write supply tests**
 
 Add tests for local CA download, PEM validation, generated `config.yml`,
-generated profile scripts, and no-URL skip behavior.
+generated profile scripts, Java buildpack system bundle append behavior, and
+no-URL skip behavior.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -78,7 +79,9 @@ Expected: supply tests fail because `bin/supply` does not exist.
 
 Implement `bin/detect`, `bin/supply`, and `lib/aurora_ca_supply.sh` with required
 tool checks, download, validation, combined bundle creation, `config.yml`, and
-launch profile generation.
+launch profile generation. The profile script must attempt to append the staged
+CA bundle to `/etc/ssl/certs/ca-certificates.crt` before falling back to
+environment variables.
 
 - [ ] **Step 4: Run tests to verify supply behavior passes**
 
