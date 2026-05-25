@@ -19,7 +19,7 @@ non-final so it can be used before the real application buildpack.
 
 - `bin/detect`: buildpack detection entry point.
 - `bin/supply`: classic supply entry point.
-- `lib/vcap_ca_urls.rb`: JSON parser and Aurora binding filter.
+- `lib/vcap_ca_urls.awk`: JSON parser and Aurora binding filter.
 - `lib/aurora_ca_supply.sh`: shell functions used by `bin/supply`.
 - `tests/run`: shell test harness.
 - `test/fixtures/aurora-vcap.json`: Aurora VCAP fixture.
@@ -30,21 +30,22 @@ non-final so it can be used before the real application buildpack.
 **Files:**
 - Create: `tests/run`
 - Create: `test/fixtures/aurora-vcap.json`
-- Create: `lib/vcap_ca_urls.rb`
+- Create: `lib/vcap_ca_urls.awk`
 
 - [ ] **Step 1: Write parser tests**
 
-Add tests that call `ruby lib/vcap_ca_urls.rb` with Aurora, non-Aurora, duplicate, and malformed JSON inputs.
+Add tests that call `awk -f lib/vcap_ca_urls.awk` with Aurora, non-Aurora,
+duplicate, and malformed JSON inputs.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `bash tests/run`
 
-Expected: failure because `lib/vcap_ca_urls.rb` does not exist.
+Expected: failure because `lib/vcap_ca_urls.awk` does not exist.
 
 - [ ] **Step 3: Implement parser**
 
-Implement `lib/vcap_ca_urls.rb` using Ruby's `JSON.parse`, matching
+Implement `lib/vcap_ca_urls.awk` with a JSON tokenizer/parser, matching
 `csb-aws-aurora-postgresql` by label/name or Aurora plus Postgres tags, and
 printing unique non-empty CA URLs.
 

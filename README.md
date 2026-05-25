@@ -53,11 +53,9 @@ Bindings without `credentials.certificate_authority_url` are ignored.
 The staging container must provide:
 
 - `bash`
-- `ruby`
+- `awk`
 - `curl`
 - `openssl`
-
-The Ruby parser uses only the standard `json` library.
 
 ## Limitations
 

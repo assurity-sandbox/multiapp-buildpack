@@ -43,8 +43,8 @@ use the downloaded CA.
   Aurora PostgreSQL CA URLs, downloads each bundle, validates the PEM with
   `openssl`, combines them, writes `config.yml`, and writes launch-time profile
   scripts.
-- `lib/vcap_ca_urls.rb`: parses `VCAP_SERVICES` JSON using Ruby's standard JSON
-  library and emits unique Aurora PostgreSQL CA URLs.
+- `lib/vcap_ca_urls.awk`: parses `VCAP_SERVICES` JSON and emits unique Aurora
+  PostgreSQL CA URLs without requiring a language runtime.
 - `lib/aurora_ca_supply.sh`: shell functions for download, validation, and
   profile script generation.
 - `tests/run`: dependency-free shell test harness.
@@ -66,7 +66,7 @@ Only bindings with a non-empty
 - Missing `VCAP_SERVICES` or no matching CA URLs: skip installation and exit
   successfully.
 - Malformed `VCAP_SERVICES`: fail staging with a clear error.
-- Missing required tools: fail staging when `ruby`, `curl`, or `openssl` is
+- Missing required tools: fail staging when `awk`, `curl`, or `openssl` is
   unavailable.
 - Download failure or invalid PEM: fail staging.
 - Runtime truststore is not writable: log a warning and use environment-variable

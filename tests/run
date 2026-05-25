@@ -73,7 +73,7 @@ assert_file_not_contains() {
 }
 
 run_parser() {
-  ruby "${ROOT_DIR}/lib/vcap_ca_urls.rb"
+  awk -f "${ROOT_DIR}/lib/vcap_ca_urls.awk"
 }
 
 test_extracts_aurora_ca_url() {
@@ -254,6 +254,41 @@ test_supply_fails_for_download_error() {
   assert_contains "reports download error" "${output}" "Failed to download CA bundle"
 }
 
+test_supply_does_not_require_ruby() {
+  local workspace build cache deps cert_url path_dir command_path
+  workspace="$(mktemp -d)"
+  build="${workspace}/build"
+  cache="${workspace}/cache"
+  deps="${workspace}/deps"
+  path_dir="${workspace}/path"
+  mkdir -p "${build}" "${cache}" "${deps}" "${path_dir}"
+
+  for command_path in bash curl openssl awk grep cat cp chmod dirname pwd mkdir; do
+    ln -s "$(command -v "${command_path}")" "${path_dir}/${command_path}"
+  done
+
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -subj "/CN=aurora-ca-test" \
+    -keyout "${workspace}/ca.key" \
+    -out "${workspace}/ca.pem" \
+    -days 1 >/dev/null 2>&1
+
+  cert_url="file://${workspace}/ca.pem"
+  PATH="${path_dir}" VCAP_SERVICES="{
+    \"csb-aws-aurora-postgresql\": [
+      {
+        \"label\": \"csb-aws-aurora-postgresql\",
+        \"credentials\": {
+          \"certificate_authority_url\": \"${cert_url}\"
+        }
+      }
+    ]
+  }" \
+    "${ROOT_DIR}/bin/supply" "${build}" "${cache}" "${deps}" "0" >/dev/null
+
+  assert_file_exists "supply works without ruby" "${deps}/0/aurora-ca-certificates/aurora-ca-bundle.pem"
+}
+
 test_extracts_aurora_ca_url
 test_ignores_non_aurora_services
 test_deduplicates_ca_urls
@@ -262,6 +297,7 @@ test_supply_downloads_and_writes_profile_scripts
 test_supply_skips_without_ca_urls
 test_supply_fails_for_invalid_pem
 test_supply_fails_for_download_error
+test_supply_does_not_require_ruby
 
 if [[ ${FAILURES} -gt 0 ]]; then
   echo "${FAILURES} test(s) failed"

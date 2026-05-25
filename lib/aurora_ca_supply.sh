@@ -100,16 +100,16 @@ aurora_ca_install() {
   local install_dir="${deps_dir}/${index}/aurora-ca-certificates"
   local deps_index_dir="${deps_dir}/${index}"
   local profile_dir="${deps_dir}/${index}/profile.d"
-  local parser="${buildpack_dir}/lib/vcap_ca_urls.rb"
+  local parser="${buildpack_dir}/lib/vcap_ca_urls.awk"
   local urls
 
-  aurora_ca_require_command ruby
+  aurora_ca_require_command awk
   aurora_ca_require_command curl
   aurora_ca_require_command openssl
 
   mkdir -p "${install_dir}"
 
-  if ! urls="$(ruby "${parser}")"; then
+  if ! urls="$(awk -f "${parser}")"; then
     aurora_ca_fail "Could not parse VCAP_SERVICES"
   fi
 
